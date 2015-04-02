@@ -1,34 +1,43 @@
+// chitter.go
+// A simple messaging server written in Go
+// Written by James Whang
+
 package main
 
 import (
-    "os"
-    "fmt"
-    "net"
+	"fmt"
+	"net"
+	"os"
+//    "strings"
+    "bufio"
 )
 
 func handleConnection(conn net.Conn) {
-  //var msg = make([]byte, 0, 4096)
-  var tmp = make([]byte, 0, 1024)
-  msgSize, err := conn.Read(tmp)
-  if err != nil {
-    fmt.Println("Failed reading")
-  }
-  fmt.Println(msgSize)
-  fmt.Println(tmp)
+    // Read the message from the connection channel 
+	msg, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		fmt.Println("Failed reading")
+	}
+    conn.Write([]byte(msg + "\n"))
+    conn.Close()
 }
 
 func main() {
-  port := os.Args[1]
-  ln, err := net.Listen("tcp", ":" + port)
-  if err != nil {
-    // error handle
-  }
-  for {
-    conn, err := ln.Accept()
-    if err != nil {
-    // error 
+    if len(os.Args) < 2 {
+        fmt.Println("Usage: go run chitter [port_num]")
+        return
     }
-    go handleConnection(conn)
-  }
+	port := os.Args[1]
+	ln, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+        fmt.Println("Failed to connect to port" + port)
+        return
+	}
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			// error
+		}
+		go handleConnection(conn)
+	}
 }
-
