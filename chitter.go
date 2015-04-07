@@ -8,30 +8,81 @@ import (
 	"fmt"
 	"net"
 	"os"
-//    "strings"
+    "strings"
     "bufio"
+    "strconv"
 )
 
-func handleConnection(conn net.Conn, msgChan chan string, idChan chan int) {
+var done = make(chan bool)
+
+func handleConnection(conn net.Conn, msgChan *chan string, clientID int) {
     // Read the message from the connection channel 
     reader := bufio.NewReader(conn)
-    
+    /*
     for {
-    	msg, err := reader.ReadString('\n')
-
-		if err != nil {
-			fmt.Println("Bye!")
-			break
-		}
-
     	// echo it back to the connected user
-    	conn.Write([]byte(msg))
-   		//size, err := writer.WriteString([]byte(msg))
-    	if err != nil {
-      	  fmt.Println("Bye!")
-      	  break
-    	}
+	   	//for i := 0; i < 2; i++ {
+	   		go func () {
+		        select {
+			       	case msg1 := <-*msgChan:
+			       		msgArray := strings.SplitN(msg1, ":", 2)
+			       		target := strings.TrimSpace(msgArray[0])
+			       		message := msgArray[1]
+
+			       		fmt.Println(target)
+			       		fmt.Println(message)
+
+			       		
+			       		if strconv.Itoa(clientID) == target {
+			            	fmt.Println("received from channel", msg1)
+			            	conn.Write([]byte(message))
+			            }
+			        default:
+			        	msg2, err := reader.ReadString('\n')
+			        	if err != nil {
+			        		fmt.Println("Bye!")
+			        		conn.Close()
+			        		break
+			        	}
+
+			        	msgArray := strings.SplitN(msg2, ":", 2)
+			        	target := strings.TrimSpace(msgArray[0])
+			        	message := msgArray[2]
+			        	fmt.Println(target)
+			        	fmt.Println(message)
+			        	
+			        	if target == "all" {
+			        		// Do something here to broadcast lol
+			        	} else if message == msg2 {
+			        		// Do something here to broadcast lol 
+			        	} else if message == "whoami" {
+			        		conn.Write([]byte(strconv.Itoa(clientID)))
+			        	} else {
+			        		fmt.Println("received from user", msg2, clientID)
+		            		*msgChan <- msg2
+			        	}
+			    }
+			    done <- true
+		    }()
+    	//}
+
+   		//conn.Write([]byte(rcvMsg))
+    } 
+    */
+    //reader := bufio.NewReader(conn)
+    for {
+    	go func () {
+    		message , _:= reader.ReadString('\n') // TODO: ERROR CHECK
+    		conn.Write([]byte(message))
+    	}()
     }
+    
+}
+
+func initIdChan(idchan chan int) {
+	for i:=0; i < 100; i++ {
+		idchan <- i
+	}
 }
 
 func main() {
@@ -43,7 +94,7 @@ func main() {
 
 	port := os.Args[1]
 
-	msgChan := make(chan string) // channel for communication
+	msgChan := make(chan string, 100) // channel for communication	
 	idChan := make(chan int, 100) // channel for clientID
 	// TODO: What happens if there are more than 100 clients..?
 
@@ -54,12 +105,19 @@ func main() {
         return
 	}
 
+	initIdChan(idChan)
+
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			// error
 		} else {
-		    go handleConnection(conn, msgChan, idChan)
+			clientID := <- idChan
+			s := []string{"Hello, ", strconv.Itoa(clientID), "\n"}
+			welcomeMessage := strings.Join(s, "")
+			conn.Write([]byte(welcomeMessage))
+		    go handleConnection(conn, &msgChan, clientID)
+		   // <-done
         }
 	}
 }
