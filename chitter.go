@@ -73,7 +73,10 @@ func handleConnection(conn net.Conn, msgChan *chan string, clientID int) {
     for {
     	go func () {
     		message , _:= reader.ReadString('\n') // TODO: ERROR CHECK
-    		conn.Write([]byte(message))
+    		toJoin := []string{strconv.Itoa(clientID), " : ", message}
+    		self := strings.Join(toJoin, "")
+
+    		conn.Write([]byte(self))
     	}()
     }
     
