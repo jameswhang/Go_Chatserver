@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"net"
 	"os"
-    //"strings"
+    "strings"
     "bufio"
     "strconv"
     "log"
@@ -52,16 +52,49 @@ func (c Client) ReadLinesInto(ch chan <- string) {
 		if err != nil {
 			break
 		}
-		ch <- fmt.Sprintf("%s: %s", c.id, line)
+
+		if line == "whoami:\n" {
+			ch <- fmt.Sprintf("%s: %s: %s", c.id, "chitter", c.id)
+		} else {
+			if strings.Contains(line, ":") {
+				msgArray := strings.SplitN(line, ":", 2)
+
+				if strings.TrimSpace(msgArray[0]) == "all" {
+					ch <- fmt.Sprintf("%s: %s: %s", "all", c.id, msgArray[1])
+				} else {
+					ch <- fmt.Sprintf("%s: %s: %s", msgArray[0], c.id, msgArray[1])
+				}
+			} else {
+				ch <- fmt.Sprintf("%s: %s: %s", "all", c.id, line)
+			}
+		}
+
+		
+		//ch <- fmt.Sprintf("%s: %s", c.id, line)
 	}
 }
 
 func (c Client) WriteLinesFrom(ch <- chan string) {
 	for msg := range ch {
-		_, err := io.WriteString(c.connection, msg)
-		if err != nil {
-			return
+		msgArray := strings.SplitN(msg, ":", 3)
+		target := strings.TrimSpace(msgArray[0])
+
+		if target == "all" {
+			messages := []string{msgArray[1], ": ", msgArray[2]}
+			_, err := io.WriteString(c.connection, strings.Join(messages, ""))
+			if err != nil {
+				return
+			}
+		} else if target == c.id {
+			messages := []string{msgArray[1], ": ", msgArray[2]}
+			_, err := io.WriteString(c.connection, strings.Join(messages, ""))
+			if err != nil {
+				return
+			}
 		}
+
+		//_, err := io.WriteString(c.connection, msg)
+		
 	}
 }
 
