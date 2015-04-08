@@ -8,119 +8,125 @@ import (
 	"fmt"
 	"net"
 	"os"
-    "strings"
+    //"strings"
     "bufio"
     "strconv"
+    "log"
+    "io"
 )
+
+type Client struct {
+	connection net.Conn
+	id string
+	ch chan string
+}
 
 var done = make(chan bool)
 
-func handleConnection(conn net.Conn, msgChan *chan string, clientID int) {
-    // Read the message from the connection channel 
-    reader := bufio.NewReader(conn)
-    /*
-    for {
-    	// echo it back to the connected user
-	   	//for i := 0; i < 2; i++ {
-	   		go func () {
-		        select {
-			       	case msg1 := <-*msgChan:
-			       		msgArray := strings.SplitN(msg1, ":", 2)
-			       		target := strings.TrimSpace(msgArray[0])
-			       		message := msgArray[1]
+func handleConnection(conn net.Conn, msgChan chan<- string, addClientChan chan<- Client, rmchan chan<- Client, clientID string) {
+	//reader := bufio.NewReader(conn)
+	defer conn.Close()
 
-			       		fmt.Println(target)
-			       		fmt.Println(message)
+	client := Client {
+		connection: conn,
+		id: clientID,
+		ch: make(chan string),
+	}
 
-			       		
-			       		if strconv.Itoa(clientID) == target {
-			            	fmt.Println("received from channel", msg1)
-			            	conn.Write([]byte(message))
-			            }
-			        default:
-			        	msg2, err := reader.ReadString('\n')
-			        	if err != nil {
-			        		fmt.Println("Bye!")
-			        		conn.Close()
-			        		break
-			        	}
+	addClientChan <- client
 
-			        	msgArray := strings.SplitN(msg2, ":", 2)
-			        	target := strings.TrimSpace(msgArray[0])
-			        	message := msgArray[2]
-			        	fmt.Println(target)
-			        	fmt.Println(message)
-			        	
-			        	if target == "all" {
-			        		// Do something here to broadcast lol
-			        	} else if message == msg2 {
-			        		// Do something here to broadcast lol 
-			        	} else if message == "whoami" {
-			        		conn.Write([]byte(strconv.Itoa(clientID)))
-			        	} else {
-			        		fmt.Println("received from user", msg2, clientID)
-		            		*msgChan <- msg2
-			        	}
-			    }
-			    done <- true
-		    }()
-    	//}
 
-   		//conn.Write([]byte(rcvMsg))
-    } 
-    */
-    //reader := bufio.NewReader(conn)
-    for {
-    	go func () {
-    		message , _:= reader.ReadString('\n') // TODO: ERROR CHECK
-    		toJoin := []string{strconv.Itoa(clientID), " : ", message}
-    		self := strings.Join(toJoin, "")
+	//ch := make(chan string)
+	//addClientChan <- Client{conn, ch}
+	// io.WriteString(conn, fmt.Sprintf("Welcome "))
 
-    		conn.Write([]byte(self))
-    	}()
-    }
-    
+	go client.ReadLinesInto(msgChan)
+	client.WriteLinesFrom(client.ch)
+
 }
 
-func initIdChan(idchan chan int) {
-	for i:=0; i < 100; i++ {
-		idchan <- i
+func (c Client) ReadLinesInto(ch chan <- string) {
+	reader := bufio.NewReader(c.connection)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+		ch <- fmt.Sprintf("%s: %s", c.id, line)
 	}
 }
+
+func (c Client) WriteLinesFrom(ch <- chan string) {
+	for msg := range ch {
+		_, err := io.WriteString(c.connection, msg)
+		if err != nil {
+			return
+		}
+	}
+}
+
+func initIdChan(idchan chan string) {
+	for i:=0; i < 100; i++ {
+		idchan <- strconv.Itoa(i)
+	}
+}
+
+func handleMessage(msgChan chan string, clientChan <- chan Client, rmchan <- chan Client) {
+	clients := make(map[net.Conn]chan <- string)
+	for {
+		select {
+		case msg:= <- msgChan:
+			for _, ch := range clients {
+				go func (mch chan <- string) {mch <- msg}(ch)
+			}
+		case client:= <-clientChan:
+			clients[client.connection] = client.ch
+		case client := <- rmchan:
+			delete(clients, client.connection)
+		}
+	}
+	for msg := range msgChan {
+		log.Printf("new message %s", msg)
+	}
+}
+
+
 
 func main() {
 	// usage & argument sanitization
     if len(os.Args) < 2 {
         fmt.Println("Usage: go run chitter [port_num]")
-        return
+        os.Exit(1)
     }
 
 	port := os.Args[1]
 
-	msgChan := make(chan string, 100) // channel for communication	
-	idChan := make(chan int, 100) // channel for clientID
+	//msgChan := make(chan string, 100) // channel for communication	
+	idChan := make(chan string, 100) // channel for clientID
 	// TODO: What happens if there are more than 100 clients..?
 
 	ln, err := net.Listen("tcp", ":" + port)
 
 	if err != nil {
         fmt.Println("Failed to connect to port" + port)
-        return
+        os.Exit(1)
 	}
+
+	msgChan := make(chan string)
+	addClientChan := make(chan Client)
+	removeClientChan := make(chan Client)
+
 
 	initIdChan(idChan)
 
+	go handleMessage(msgChan, addClientChan, removeClientChan)
+
+
 	for {
 		conn, err := ln.Accept()
-		if err != nil {
-			// error
-		} else {
+		if err == nil {
 			clientID := <- idChan
-			s := []string{"Hello, ", strconv.Itoa(clientID), "\n"}
-			welcomeMessage := strings.Join(s, "")
-			conn.Write([]byte(welcomeMessage))
-		    go handleConnection(conn, &msgChan, clientID)
-		   // <-done
-        }
+			go handleConnection(conn, msgChan, addClientChan, removeClientChan, clientID)
+		}
 	}
 }
